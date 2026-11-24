@@ -4,6 +4,7 @@ import argparse
 import os
 import subprocess  # nosec B404
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from prefect import flow, get_run_logger, task
@@ -13,6 +14,12 @@ from model_pipeline import load_model, save_model  # noqa: F401
 
 # Étapes qualité/sécurité limitées à nos 3 fichiers (RQ de l'atelier)
 FILES = ["model_pipeline.py", "main.py", "pipeline_prefect.py"]
+
+# Étape 06 : repo git distant
+REPO_URL = "https://github.com/molkajmal2004/ml_project_mlops.git"
+BRANCH = "main"
+BASE_DIR = Path(__file__).resolve().parent
+CLONE_DIR = BASE_DIR / "projet_clone"  # même nom que dans .gitignore
 
 
 def make_args(**kwargs):
@@ -31,6 +38,18 @@ def run(cmd):
     if res.returncode != 0:
         logger.error(res.stderr)
         raise RuntimeError(f"Échec : {' '.join(cmd)}")
+
+
+# ---------------- Task : git (étape 06) ----------------
+@task(name="Récupérer le projet (git)", retries=2, retry_delay_seconds=10)
+def fetch_project():
+    """Met à jour le projet (git pull) s'il existe déjà, sinon le clone depuis GitHub."""
+    if (BASE_DIR / ".git").exists():
+        run(["git", "-C", str(BASE_DIR), "pull", "--ff-only", "origin", BRANCH])
+    elif (CLONE_DIR / ".git").exists():
+        run(["git", "-C", str(CLONE_DIR), "pull", "--ff-only", "origin", BRANCH])
+    else:
+        run(["git", "clone", "-b", BRANCH, REPO_URL, str(CLONE_DIR)])
 
 
 # ---------------- Tasks : code ----------------
@@ -96,6 +115,11 @@ def predict(args):
 
 
 # ---------------- Flows ----------------
+@flow(name="git")
+def git_flow():
+    fetch_project()
+
+
 @flow(name="install")
 def install_flow():
     install_dependencies()
@@ -131,6 +155,7 @@ def predict_flow(input_file: str):
 
 @flow(name="all")
 def all_flow(model: str = "xgboost", imbalance: str = "class_weight"):
+    fetch_project()  # étape 06 : récupération du projet en premier
     code_flow()  # code avant la préparation des données
     args = make_args(model=model, imbalance=imbalance)
     prepare(args)
@@ -141,7 +166,11 @@ def all_flow(model: str = "xgboost", imbalance: str = "class_weight"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--flow", default="all", choices=["all", "train", "evaluate", "code", "install", "predict"])
+    parser.add_argument(
+        "--flow",
+        default="all",
+        choices=["all", "train", "evaluate", "code", "install", "predict", "git"],
+    )
     parser.add_argument("--input", help="CSV pour le flow predict")
     cli = parser.parse_args()
 
@@ -154,4 +183,5 @@ if __name__ == "__main__":
             "evaluate": evaluate_flow,
             "code": code_flow,
             "install": install_flow,
+            "git": git_flow,
         }[cli.flow]()
