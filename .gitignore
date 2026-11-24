@@ -1,0 +1,9 @@
+venv/
+venv_wsl/
+__pycache__/
+*.pyc
+artifacts/
+*.joblib
+.pytest_cache/
+projet_clone/
+req_sans_xgb.txt
