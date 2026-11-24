@@ -7,3 +7,6 @@ artifacts/
 .pytest_cache/
 projet_clone/
 req_sans_xgb.txt
+.env
+*.pkl
+mlruns/
